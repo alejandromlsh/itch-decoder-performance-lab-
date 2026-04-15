@@ -1,0 +1,21 @@
+# Archivos compilados
+*.o
+*.out
+*.a
+*.so
+
+# Carpetas de compilación (si usas CMake o Make)
+build/
+bin/
+data/
+other/
+
+# Archivos de datos de tu proyecto
+*.pcap
+*.pcapng
+*.bin
+nyse_dump.bin
+
+# Archivos temporales del sistema
+.DS_Store
+.vscode
