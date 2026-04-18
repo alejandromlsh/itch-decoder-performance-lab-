@@ -14,8 +14,7 @@
 #include "io/binary_dump.hpp"
 // #include "io/stats.hpp"
 
-
-static constexpr const char* DUMP_PATH = "/home/alejandro/workspace/1-nasdaq-parser/data/nyse_dump.bin";
+static constexpr const char* DUMP_PATH = "/home/alejandro/workspace/1-nasdaq-parser/data/nyse_dump2.bin";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Signal handling
@@ -54,14 +53,6 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, on_signal);
 
     // ── 1. EAL initialisation ────────────────────────────────────────────────
-    //
-    // rte_eal_init (inside dpdk::init_eal) consumes all EAL arguments from
-    // argv — everything passed on the command line.
-    //
-    // It boots the entire DPDK runtime:
-    //   - Maps hugepage / --no-huge anonymous memory
-    //   - Starts per-lcore service threads (one: lcore 0, our main thread)
-    //   - Loads PMD drivers and instantiates the --vdev net_pcap0 port
 
     try {
         dpdk::init_eal(argc, argv);
@@ -85,10 +76,6 @@ int main(int argc, char** argv)
     // ── 3. Pool and port setup ───────────────────────────────────────────────
     //
     // PortConfig owns all tuning values (port_id, nb_mbufs, rx_desc, etc.).
-    // Defaults are correct for PCAP replay — change them in port_manager.hpp.
-    //
-    // Pool must be created before setup_port references it in
-    // rte_eth_rx_queue_setup.
 
     dpdk::PortConfig port_cfg;   // all defaults apply
 
@@ -123,9 +110,7 @@ int main(int argc, char** argv)
 
     // ── 4. Binary dump ───────────────────────────────────────────────────────
     //
-    // Writes raw Ethernet frames to disk BEFORE any protocol parsing.
-    // Lets you inspect the exact bytes DPDK delivered using ImHex +
-    // tools/nyse_dump.hexpat.
+    // Writes raw MoldUdp frames to disk BEFORE any protocol parsing.
 
     std::unique_ptr<BinaryDump> dump;
     if (DUMP_PATH) {
@@ -135,16 +120,14 @@ int main(int argc, char** argv)
 
     // ── 5. RX loop + scalar decoder ──────────────────────────────────────────
     //
-    // run_rx_loop is a template: ScalarDecoder is the concrete type, so the
-    // compiler sees process_burst() at instantiation time and can inline the
-    // full dispatch chain — no virtual call overhead on the hot path.
+    // run_rx_loop is a template function: inlined
 
     std::cout << "[INFO] Decoder: scalar\n";
     std::cout << "[INFO] Starting RX loop — Ctrl+C to stop.\n";
 
     // OrderBook     book;
-    class ScalarDecoder {};
-    ScalarDecoder decoder;
+    // class ScalarDecoder {};
+    itch::ScalarDecoder decoder;
 
     dpdk::run_rx_loop(port_cfg.port_id, decoder, dump.get(), g_stop);
 

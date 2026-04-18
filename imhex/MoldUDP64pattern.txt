@@ -1,0 +1,143 @@
+#pragma endian big
+
+#pragma array_limit 0x2000000
+#pragma pattern_limit 0x5000000
+
+#include <std/mem.pat>
+
+
+struct SystemEventMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6]; // 48-bit timestamp
+    char event_code;
+};
+
+struct AddOrderMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6];
+    u64 order_reference_number;
+    char buy_sell_indicator; // 'B' = Buy, 'S' = Sell
+    u32 shares;
+    char stock[8];           // Ticker symbol (e.g., "AAPL    ")
+    u32 price;               // Integer with 4 implied decimal places. See Section 3 protocol
+                             // Must be divided by 10000 to get the 4 floating poitions
+};
+
+struct OrderExecutedMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6];
+    u64 order_reference_number;
+    u32 executed_shares;
+    u64 match_number;
+};
+
+struct OrderCancelMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6]; //integer of 6 bytes, 48 bits. Requiere lectura personalizada en c++ teniendo en cuenta big and small endia
+    u64 order_reference_number;
+    u32 cancelled_shares;
+    
+};
+
+struct OrderDeleteMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6];
+    u64 order_reference_number;
+};
+
+struct OrderReplaceMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6];
+    u64 original_order_reference_number;
+    u64 new_order_reference_number;
+    u32 shares;
+    u32 price; // Integer representing a real number with 4 floating positions. 
+    
+};
+
+struct StockDirectoryMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6];
+    char stock[8];
+    char market_category;
+    char financial_status_indicator;
+    u32 round_lot_size;
+    char round_lots_only; 
+    char issue_classification;
+    char issue_subtype[2];
+    char authenticity;
+    char short_sale_threshold_indicator;
+    char ipo_flag;
+    char LULD_reference_price_tier;
+    char etp_flag;
+    u32 etp_leverage_factor;
+    char inverse_indicator;
+};
+
+struct StockTradingActionMessage {
+    u16 stock_locate;
+    u16 tracking_number;
+    u8 timestamp_nanos[6];
+    char stock[8];
+    char trading_state;
+    char reserved;
+    char reason[4];
+};
+
+// ------------------------------------------------
+// Message Block & MoldUDP64 Wrapper
+// ------------------------------------------------
+
+struct MessageBlock {
+    u16 message_length;
+    
+    if (message_length > 0) {
+        char message_type;
+        
+        // Conditionally decode based on the message type
+        if (message_type == 'S') {
+            SystemEventMessage payload;
+        } else if (message_type == 'A') {
+            AddOrderMessage payload;
+        } else if (message_type == 'E') {
+            OrderExecutedMessage payload;
+        } else if (message_type == 'X') {
+            OrderCancelMessage payload;
+        } else if (message_type == 'D') {
+            OrderDeleteMessage payload;
+        } else if (message_type == 'U') {
+            OrderReplaceMessage payload;
+        } else if (message_type == 'R') {
+            StockDirectoryMessage payload;
+        } else if (message_type == 'H') {
+            StockTradingActionMessage payload;
+        }
+        else {
+            // FALLBACK: If the message type isn't defined above, 
+            // read the raw bytes so the parser doesn't lose its alignment!
+            u8 raw_payload[message_length - 1];
+        }
+    }
+};
+
+// Defines the MoldUDP64 transport wrapper
+struct MoldUDP64Packet {
+    char session[10];
+    u64 sequence_number;
+    u16 message_count;
+    
+    // Parse the exact number of ITCH messages defined in the MoldUDP header
+    if (message_count > 0) {
+        MessageBlock messages[message_count];
+    }
+};
+
+// Dynamically parse packets starting from offset 0x00 until the end of the file is reached
+MoldUDP64Packet packets[while(!std::mem::eof())] @ 0x00;

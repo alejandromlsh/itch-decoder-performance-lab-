@@ -16,6 +16,7 @@ add_executable(nyse_decoder
     src/dpdk/port_manager.cpp
     # src/decode/scalar/scalar_decoder.cpp
     src/io/binary_dump.hpp
+    src/order_book/order_book.hpp
     # src/io/stats.cpp
 )
 

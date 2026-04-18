@@ -11,6 +11,10 @@
 
 #include "io/binary_dump.hpp"
 
+// #include <scalar_decoder.hpp>
+inline constexpr bool kEnableDump = false;
+
+
 namespace dpdk {
 
     // Maximum mbufs fetched in one rte_eth_rx_burst call.
@@ -42,9 +46,6 @@ namespace dpdk {
                 continue;
             }
             empty_burst_count = 0;
-
-            // same changes I add to the binary dumb are required before sending data to the decoder
-            // so right now they will remain in the binary dumb, but they should be placed here.
 
             for (int i = 0; i < count;++i) {
                 rte_mbuf * this_mbuf = mbufs[i];
@@ -90,24 +91,15 @@ namespace dpdk {
                 offset += sizeof(struct rte_udp_hdr);
 
                 // 5. Extract payload and write to file
-                const uint8_t * payload = data + offset;
+                uint8_t * payload = data + offset;
                 
-                if (dump) {
+                if (kEnableDump) [[unlikely]] {
                   dump->write_packet(payload,payload_len);
                 }
-                // file_.write(reinterpret_cast<const char *>(payload), payload_len);
                 
-                //decode.process_burst(payload,payload_len)
+                // decoder dispatch
+                decoder.process_payload(payload,payload_len);
             }
-            
-
-            // if we set dump we will write to a binary file the payloads
-            // if (dump) {
-            //     dump->write_burst(mbufs, count);
-            // }
-
-            // decoder dispatch
-            //decoder.process_burst(mbufs, count);
 
             // free resources
             rte_pktmbuf_free_bulk(mbufs, count); // free in bulk instead of in a loop

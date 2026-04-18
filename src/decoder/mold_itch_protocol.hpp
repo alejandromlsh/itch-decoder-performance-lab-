@@ -93,7 +93,6 @@ namespace itch {
     
 }
 
-
 #pragma pack(push,1)
 namespace itch {
 
