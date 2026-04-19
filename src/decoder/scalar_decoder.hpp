@@ -3,7 +3,7 @@
 #include "mold_itch_protocol.hpp"
 #include "order_book/order_book.hpp"
 #include <cstring>
-#include <iostream>
+// #include <iostream>
 
 namespace itch {
 
@@ -21,6 +21,7 @@ enum class MsgType : char {
 class ScalarDecoder {
 
 public:
+    ScalarDecoder(model::OrderBook& book) : orderBook(book){}
 
     void init(){}
     void finalize(){}
@@ -70,6 +71,7 @@ public:
               break;
             }
             handleStockTradingAction(*reinterpret_cast<const StockTradingActionMessage *>(p));
+            break;
           }
           
           case MsgType::AddOrderNoMPID: {
@@ -77,6 +79,7 @@ public:
               break;
             }
             handleAddOrderNoMPID(*reinterpret_cast<const AddOrderNoMPIDMessage *>(p));
+            break;
           }
 
           case MsgType::AddOrderWithMPID: {
@@ -84,6 +87,7 @@ public:
               break;
             }
             handleAddOrderWithMPID(*reinterpret_cast<const AddOrderWithMPIDMessage *>(p));
+            break;
           }
 
           case MsgType::OrderCancel: {
@@ -106,12 +110,14 @@ public:
               break;
             }
             handleOrderExecute(*reinterpret_cast<const OrderExecuteMessage *>(p));
+            break;
           }
           case MsgType::OrderReplace: {
             if (msg_len < sizeof(OrderReplaceMessage)) {
               break;
             }
             handleOrderReplace(*reinterpret_cast<const OrderReplaceMessage *>(p));          
+            break;
           }
           
           default: {
@@ -126,10 +132,15 @@ public:
     }
 
 private:
-    std::array<SymbolInfo,0xFFFF+1> locate_to_symbol_{};
+    // std::array<SymbolInfo,0xFFFF+1> locate_to_symbol_{};
+    model::OrderBook & orderBook;
 
     void handleAddOrderNoMPID(const AddOrderNoMPIDMessage& ao_msg) {
-
+      orderBook.add_order(rte_be_to_cpu_16(ao_msg.stock_locate),
+                          rte_be_to_cpu_16(ao_msg.order_reference_number),
+                          model::toSide(ao_msg.buy_sell_indicator),
+                          rte_be_to_cpu_32(ao_msg.price),
+                          rte_be_to_cpu_32(ao_msg.shares));
     }
 
     void handleAddOrderWithMPID(const AddOrderWithMPIDMessage& ao_msg) {
@@ -160,18 +171,12 @@ private:
     }
 
     void handleStockDirectoryMsg(const StockDirectoryMessage& sd_msg) {
-        const uint16_t stock_locate = rte_be_to_cpu_16(sd_msg.stock_locate);
-        SymbolInfo & entry = locate_to_symbol_[stock_locate];
-
-        std::memcpy(entry.stock,sd_msg.stock,8);
-        entry.stock[8] = '\0';
-        entry.valid = true;
-
-        entry.market_category = sd_msg.market_category;
-        entry.financial_status_indicator = sd_msg.financial_status_indicator;
-
-        entry.round_lot_size = rte_be_to_cpu_32(sd_msg.round_lot_size);
-        entry.round_lots_only = sd_msg.round_lots_only;
+        orderBook.insert_to_stock_directory(rte_be_to_cpu_16(sd_msg.stock_locate),
+                                            sd_msg.stock,
+                                            sd_msg.market_category,
+                                            sd_msg.financial_status_indicator,
+                                            rte_be_to_cpu_32(sd_msg.round_lot_size),
+                                            sd_msg.round_lots_only);
 
     }
 

@@ -10,7 +10,7 @@
 #include "dpdk/rx_loop.hpp"
 
 #include "decoder/scalar_decoder.hpp"
-// #include "model/order_book.hpp"
+#include "order_book/order_book.hpp"
 #include "io/binary_dump.hpp"
 // #include "io/stats.hpp"
 
@@ -125,9 +125,9 @@ int main(int argc, char** argv)
     std::cout << "[INFO] Decoder: scalar\n";
     std::cout << "[INFO] Starting RX loop — Ctrl+C to stop.\n";
 
-    // OrderBook     book;
+    model::OrderBook book;
     // class ScalarDecoder {};
-    itch::ScalarDecoder decoder;
+    itch::ScalarDecoder decoder(book);
 
     dpdk::run_rx_loop(port_cfg.port_id, decoder, dump.get(), g_stop);
 
