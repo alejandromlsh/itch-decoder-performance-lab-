@@ -4,6 +4,9 @@
 #include <map>
 #include <unordered_map>
 #include <cstring>
+#include <cinttypes>
+
+// Basic Book Order level 2
 
 using namespace itch;
 namespace model {
@@ -42,7 +45,7 @@ namespace model {
     BookSide bids;
     BookSide asks;
   };
-  
+
   inline Side toSide(itch::BuySellInd indicator) {
     return (indicator == BuySellInd::Buy) ? Side::Buy : Side::Sell;
   }
@@ -68,7 +71,7 @@ class OrderBook{
 
   void reduce_quantity_at_price_level(uint16_t stock_locate, Side side, uint32_t price, uint32_t quantity) {
     auto & side_map = side_levels(stock_locate,side);
-    // to reduce we need a bit more care than to add
+    // to reduce we need a bit more careful than to add
     auto it = side_map.find(price);
     if (it == side_map.end()) {
       //invalid reducction
@@ -86,6 +89,10 @@ class OrderBook{
       side_map.erase(it); // at this point better to use the iterator to remove, since it is inmediate. And not search again with they key
     }
 
+  }
+
+  const char * symbol_name(uint16_t stock_locate) {
+    return symbols_by_locate[stock_locate].valid ? symbols_by_locate[stock_locate].stock : "unkown";
   }
 
 public:
@@ -108,7 +115,7 @@ public:
   }
 
   void add_order(uint16_t stock_locate,
-                 uint16_t order_reference,
+                 uint64_t order_reference,
                  Side side,
                  uint32_t price, // remember uint representing a real. 4 floating
                  uint32_t shares){
@@ -122,10 +129,11 @@ public:
       if (!inserted) {
         // inserted will be false, if the unordered map already contains a order with this
         // order reference. In that case we return to avoid duplicated in books
+        ++stats.duplicate_adds;
         return;
       }
       add_quantity_at_price_level(stock_locate,side,price,shares);
-      //++stats.adds;
+      ++stats.adds;
   } 
 
   void execute_order(uint64_t order_reference,
@@ -133,12 +141,12 @@ public:
       auto it = orders_by_reference_num.find(order_reference); // lookup in the hashmap
       if (it == orders_by_reference_num.end()) {
         //unkown order has been executed
-        //++stats.unknown_executes
+        ++stats.unknown_executes;
         return;
       }
       OrderEntry& ord = it->second;
       if (executed_shares > ord.shares) {
-        //++stats.invalid_reduction
+        ++stats.invalid_reductions;
         return;
       }
       reduce_quantity_at_price_level(ord.stock_locate,ord.side,ord.price,executed_shares);
@@ -148,19 +156,22 @@ public:
       if (ord.shares == 0) {
         orders_by_reference_num.erase(it);
       }
-      //++stats.executes;
+      ++stats.executes;
+
   }
 
   // Partial reduction of shares
   void cancel_order(uint64_t order_reference,uint32_t cancelled_shares){
     auto it = orders_by_reference_num.find(order_reference);
     if (it == orders_by_reference_num.end()){
+      ++stats.unknown_cancels;
       //no order
       return;
     }
     // reduce quantities in the price level
     OrderEntry & order = it->second;
     if (cancelled_shares > order.shares) {
+      ++stats.invalid_reductions;
       // not possible to cancel more shares that there is in the order
       return;
     }
@@ -170,13 +181,14 @@ public:
     if (order.shares == 0){
       orders_by_reference_num.erase(it);
     }
-    //++stats.cancel
+    ++stats.cancels;
   }
 
   void delete_order(uint64_t order_reference){
     auto it = orders_by_reference_num.find(order_reference);
     if (it == orders_by_reference_num.end()){
       //order not present
+      ++stats.unknown_deletes;
       return;
     }
     // delete numbers of shares from the price level
@@ -184,7 +196,7 @@ public:
     reduce_quantity_at_price_level(order.stock_locate,order.side,order.price,order.shares);
     // Now delete the order from the orders
     orders_by_reference_num.erase(it);
-    //++stats.delete
+    ++stats.deletes;
 
 
   }
@@ -195,6 +207,7 @@ public:
 
     auto it_old = orders_by_reference_num.find(old_order_reference);
     if (it_old == orders_by_reference_num.end()){
+      ++stats.unknown_replaces;
       return;
     }
     OrderEntry old_order = it_old->second; // no reference because we need to copy
@@ -213,13 +226,79 @@ public:
 
     if (!inserted) {
       // the new order is duplicated
+      ++stats.duplicate_adds;
       return;
     }
 
-    OrderEntry & new_order = new_it->second;
     // Add new shares to the price level
     add_quantity_at_price_level(old_order.stock_locate,old_order.side,new_price,new_shares);
-    //++stats.replace
+    ++stats.replaces;
+  }
+
+private:
+  struct Stats {
+    uint64_t adds = 0;
+    uint64_t executes = 0;
+    uint64_t cancels = 0;
+    uint64_t deletes = 0;
+    uint64_t replaces = 0;
+
+    uint64_t duplicate_adds = 0;
+    uint64_t unknown_executes = 0;
+    uint64_t unknown_cancels = 0;
+    uint64_t unknown_deletes = 0;
+    uint64_t unknown_replaces = 0;
+    uint64_t invalid_reductions = 0;
+  };
+
+  Stats stats{};
+
+public:
+
+  void print_summary() const {
+      printf("adds=%" PRIu64 "\n executes=%" PRIu64 "\n cancels=%" PRIu64
+            "\n deletes=%" PRIu64 " replaces=%" PRIu64
+            "\n active_orders=%zu"
+            "\n duplicate_adds=%" PRIu64
+            "\n unknown_executes=%" PRIu64
+            "\n unknown_cancels=%" PRIu64
+            "\n unknown_deletes=%" PRIu64
+            "\n unknown_replaces=%" PRIu64
+            "\n invalid_reductions=%" PRIu64
+            "\n",
+            stats.adds,
+            stats.executes,
+            stats.cancels,
+            stats.deletes,
+            stats.replaces,
+            orders_by_reference_num.size(),              
+            stats.duplicate_adds,
+            stats.unknown_executes,
+            stats.unknown_cancels,
+            stats.unknown_deletes,
+            stats.unknown_replaces,
+            stats.invalid_reductions);
+  }
+
+  void print_top_of_book(uint16_t stock_locate) {
+    const SymbolBook & stock_book = books_by_locate[stock_locate];
+
+    printf("Symbol: %s  ",symbol_name(stock_locate));
+
+    if (stock_book.bids.price_levels.empty()) {
+      printf("BID=NA");
+    } else {
+      auto it = stock_book.bids.price_levels.rbegin(); // best bid is the maximum. Max price someone buys
+      printf("BID = %" PRIu32 " | quantity = %" PRIu64 "  ", it->first, it->second);
+    }
+
+    if (stock_book.asks.price_levels.empty()) {
+      printf("ASK=NA\n");
+    } else {
+      auto it = stock_book.asks.price_levels.begin(); // best ask is the minimm. Min price someone sell
+      printf("ASK = %" PRIu32 " | quantity = %" PRIu64 "\n", it->first, it->second);
+    }
+
   }
 
 };

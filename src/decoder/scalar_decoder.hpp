@@ -3,7 +3,33 @@
 #include "mold_itch_protocol.hpp"
 #include "order_book/order_book.hpp"
 #include <cstring>
-// #include <iostream>
+#include "perf/perf_stats.hpp"
+
+
+
+// Zero cost Latency Timer using template specialization
+constexpr bool ENABLE_DETAILED_PROFILING = true;
+
+template<bool Enables>
+struct LatencyTimer;
+
+// Specialization true
+template<>
+struct LatencyTimer<true> {
+  uint64_t start_time = 0;
+  inline void start() {
+    start_time = rte_rdtsc();
+  }
+  inline void record_to(PerfStats& stats) {
+    stats.record(rte_rdtsc() - start_time);
+  }
+};
+// Specialization false
+template<>
+struct LatencyTimer<false> {
+  inline void start(){}
+  inline void record_to(PerfStats& stats){}
+};
 
 namespace itch {
 
@@ -21,7 +47,11 @@ enum class MsgType : char {
 class ScalarDecoder {
 
 public:
-    ScalarDecoder(model::OrderBook& book) : orderBook(book){}
+    PerfStats msg_stats;
+    PerfStats decode_stats;
+    PerfStats book_stats;
+
+    ScalarDecoder(model::OrderBook& book) : order_book(book){}
 
     void init(){}
     void finalize(){}
@@ -49,6 +79,10 @@ public:
         }
 
         MsgType msg_type = static_cast<MsgType>(*(reinterpret_cast<char *>(p)));
+
+        // Masure full message latency
+        LatencyTimer<ENABLE_DETAILED_PROFILING> msg_timer;
+        msg_timer.start();
         
         switch (msg_type) {
           case MsgType::SystemEvent: {
@@ -125,6 +159,9 @@ public:
           }
         }
 
+
+        msg_timer.record_to(msg_stats);
+
         p += msg_len;
 
       }
@@ -132,56 +169,116 @@ public:
     }
 
 private:
-    // std::array<SymbolInfo,0xFFFF+1> locate_to_symbol_{};
-    model::OrderBook & orderBook;
+    model::OrderBook & order_book;
 
-    void handleAddOrderNoMPID(const AddOrderNoMPIDMessage& ao_msg) {
-      orderBook.add_order(rte_be_to_cpu_16(ao_msg.stock_locate),
-                          rte_be_to_cpu_16(ao_msg.order_reference_number),
-                          model::toSide(ao_msg.buy_sell_indicator),
-                          rte_be_to_cpu_32(ao_msg.price),
-                          rte_be_to_cpu_32(ao_msg.shares));
-    }
+    inline void handleAddOrderNoMPID(const AddOrderNoMPIDMessage& ao_msg) __attribute__((always_inline)) {
+      LatencyTimer<ENABLE_DETAILED_PROFILING> decoder_timer;
+      LatencyTimer<ENABLE_DETAILED_PROFILING> book_timer;
 
-    void handleAddOrderWithMPID(const AddOrderWithMPIDMessage& ao_msg) {
+      decoder_timer.start();
 
-    }
+      const uint16_t stock_locate = rte_be_to_cpu_16(ao_msg.stock_locate);
+      const uint64_t order_ref = rte_be_to_cpu_64(ao_msg.order_reference_number);
+      const model::Side side = model::toSide(ao_msg.buy_sell_indicator);
+      const uint32_t price = rte_be_to_cpu_32(ao_msg.price);
+      const uint32_t shares = rte_be_to_cpu_32(ao_msg.shares);
 
-    void handleOrderExecute(const OrderExecuteMessage& or_msg) {
+      decoder_timer.record_to(decode_stats);
+      book_timer.start();
+      order_book.add_order(stock_locate,order_ref,side,price,shares);
 
-    }
-
-    void handleOrderCancel(const OrderCancelMessage& oc_msg) {
-
-    }
-
-    void handleOrderDelete(const OrderDeleteMessage& od_msg) {
+      book_timer.record_to(book_stats);
 
     }
 
-    void handleOrderReplace(const OrderReplaceMessage& or_msg) {
+    inline void handleAddOrderWithMPID(const AddOrderWithMPIDMessage& ao_msg) __attribute__((always_inline)) {
+      //TBD
 
     }
 
-    void handleSystemEventMesg(const SystemEventMessage& se_msg) {
-      char type = se_msg.message_type;
-      uint16_t stock_locate = rte_be_to_cpu_16(se_msg.stock_locate);
-      EventCode event_code = se_msg.event_code;
-      
+    inline void handleOrderExecute(const OrderExecuteMessage& oe_msg) __attribute__((always_inline)) {
+      LatencyTimer<ENABLE_DETAILED_PROFILING> decoder_timer;
+      LatencyTimer<ENABLE_DETAILED_PROFILING> book_timer;
+
+      decoder_timer.start();
+      const uint64_t order_ref = rte_be_to_cpu_64(oe_msg.order_reference_number);
+      const uint32_t ex_shares = rte_be_to_cpu_32(oe_msg.executed_shares);
+      decoder_timer.record_to(decode_stats);
+
+      book_timer.start();
+      order_book.execute_order(order_ref,ex_shares);
+      book_timer.record_to(book_stats);
     }
 
-    void handleStockDirectoryMsg(const StockDirectoryMessage& sd_msg) {
-        orderBook.insert_to_stock_directory(rte_be_to_cpu_16(sd_msg.stock_locate),
-                                            sd_msg.stock,
-                                            sd_msg.market_category,
-                                            sd_msg.financial_status_indicator,
-                                            rte_be_to_cpu_32(sd_msg.round_lot_size),
-                                            sd_msg.round_lots_only);
+    inline void handleOrderCancel(const OrderCancelMessage& oc_msg) __attribute__((always_inline)){
+      LatencyTimer<ENABLE_DETAILED_PROFILING> decoder_timer;
+      LatencyTimer<ENABLE_DETAILED_PROFILING> book_timer;
 
+      decoder_timer.start();
+      const uint64_t order_ref = rte_be_to_cpu_64(oc_msg.order_reference_number);
+      const uint32_t cancelled_shares = rte_be_to_cpu_32(oc_msg.cancelled_shares);
+      decoder_timer.record_to(decode_stats);
+
+      book_timer.start();
+      order_book.cancel_order(order_ref,cancelled_shares);
+      book_timer.record_to(book_stats);
     }
 
-    void handleStockTradingAction(const StockTradingActionMessage & sta_msg){
+    inline void handleOrderDelete(const OrderDeleteMessage& od_msg) __attribute__((always_inline)){
+      LatencyTimer<ENABLE_DETAILED_PROFILING> decoder_timer;
+      LatencyTimer<ENABLE_DETAILED_PROFILING> book_timer;
 
+      decoder_timer.start();
+      const uint64_t order_ref = rte_be_to_cpu_64(od_msg.order_reference_number);
+      decoder_timer.record_to(decode_stats);
+
+      book_timer.start();
+      order_book.delete_order(order_ref);
+      book_timer.record_to(book_stats);
+    }
+
+    inline void handleOrderReplace(const OrderReplaceMessage& or_msg) __attribute__((always_inline)) {
+      LatencyTimer<ENABLE_DETAILED_PROFILING> decoder_timer;
+      LatencyTimer<ENABLE_DETAILED_PROFILING> book_timer;
+
+      decoder_timer.start();
+      const uint64_t original_order_ref = rte_be_to_cpu_64(or_msg.original_order_reference_number);
+      const uint64_t new_order_ref = rte_be_to_cpu_64(or_msg.new_order_reference_number);
+      const uint32_t price = rte_be_to_cpu_32(or_msg.price);
+      const uint32_t shares = rte_be_to_cpu_32(or_msg.shares);
+      decoder_timer.record_to(decode_stats);
+
+      book_timer.start();
+      order_book.replace_order(original_order_ref,new_order_ref,price,shares);
+      book_timer.record_to(book_stats);
+    }
+
+    inline void handleSystemEventMesg(const SystemEventMessage& se_msg) __attribute__((always_inline)) {
+      // TBD.
+    }
+
+    // This message is not in the hoth path, they are distributed at the start of session.
+    inline void handleStockDirectoryMsg(const StockDirectoryMessage& sd_msg) __attribute__((always_inline)) {
+      LatencyTimer<ENABLE_DETAILED_PROFILING> decoder_timer;
+      LatencyTimer<ENABLE_DETAILED_PROFILING> book_timer;
+
+      decoder_timer.start();
+      const uint16_t stock_locate = rte_be_to_cpu_16(sd_msg.stock_locate);
+      const uint32_t round_lot_size = rte_be_to_cpu_32(sd_msg.round_lot_size);
+      decoder_timer.record_to(decode_stats);
+
+      book_timer.start();
+      order_book.insert_to_stock_directory(stock_locate, 
+                                          sd_msg.stock,
+                                          sd_msg.market_category,
+                                          sd_msg.financial_status_indicator,
+                                          round_lot_size,
+                                          sd_msg.round_lots_only);
+      book_timer.record_to(book_stats);
+    }
+
+    inline void handleStockTradingAction(const StockTradingActionMessage & sta_msg) __attribute__((always_inline)) {
+      //TBD
     }
 
 };

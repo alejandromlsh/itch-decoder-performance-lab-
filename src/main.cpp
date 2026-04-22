@@ -31,20 +31,19 @@ static void on_signal(int) { g_stop = true; }
 // main
 //
 // Launch command:
+// I have isolated core 4 in grub to have minimum interruptions, so use such core
 //
-//   sudo ./nyse_decoder                                            \
-//       --no-huge -l 0                                             \
+//   sudo ./nyse_decoder                                            
+//       --no-huge -l 4                                             
 //       --vdev "net_pcap0,rx_pcap=/data/nyse.pcap,infinite_rx=0"
 //
 //   --no-huge       Use anonymous mmap instead of 2 MB hugepages.
 //                   Fine for PCAP replay; avoids hugepage configuration.
 //
-//   -l 0            Single lcore — this pipeline is entirely single-threaded.
+//   -l 4           Single lcore — this pipeline is entirely single-threaded.
 //
 //   --vdev          Register a virtual NIC backed by the .pcap file.
 //                   infinite_rx=0 stops the PMD at EOF instead of looping.
-//
-// There is no "--" separator because we have no application-level arguments.
 // ─────────────────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv)
@@ -132,6 +131,15 @@ int main(int argc, char** argv)
     dpdk::run_rx_loop(port_cfg.port_id, decoder, dump.get(), g_stop);
 
     // print_stats(decoder.stats());
+    decoder.msg_stats.report("Full ITCH Message Processing Latency");
+    decoder.decode_stats.report("Just decode, and endian changes Processing Latency");
+    decoder.book_stats.report("Book Order Processing Latency");
+
+    book.print_top_of_book(88);
+
+    book.print_summary();
+
+
 
     // ── 6. Teardown ──────────────────────────────────────────────────────────
 

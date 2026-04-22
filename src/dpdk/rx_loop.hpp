@@ -22,7 +22,7 @@ namespace dpdk {
 
     // How many consecutive zero-return bursts we tolerate before declaring
     // the PCAP file exhausted.
-    inline constexpr int EOF_THRESHOLD = 3;
+    inline constexpr int EOF_THRESHOLD = 20;
 
     // run_rx_loop<DecoderT>
     //
@@ -38,11 +38,27 @@ namespace dpdk {
         rte_mbuf* mbufs[RX_BURST_SIZE]; // array of pointers
         int       empty_burst_count = 0;
 
+        // start timer
+        uint64_t e2e_start = rte_rdtsc();
+
         while(!stop_flag) {
             const uint16_t count = rte_eth_rx_burst(port_id, 0, mbufs, RX_BURST_SIZE);
 
             if (count == 0) {
-                if (++empty_burst_count >= EOF_THRESHOLD) break;   // PCAP EOF
+                ++empty_burst_count;   // PCAP EOF
+                // printf("[INFO] rte_eth_rx_burst returned 0\n");
+                // Only check the slow link status if we've spun 10 times
+                if (empty_burst_count > EOF_THRESHOLD) {
+                    break; // for testing I will avoid the next calls
+                    struct rte_eth_link link;
+                    rte_eth_link_get_nowait(port_id, &link);
+                    
+                    if (link.link_status == RTE_ETH_LINK_DOWN) {
+                        // printf("\n[INFO] PCAP EOF detected (link down).\n");
+                        break; 
+                    }
+                    empty_burst_count = 0; // Reset so we don't spam the check
+                }
                 continue;
             }
             empty_burst_count = 0;
@@ -103,9 +119,13 @@ namespace dpdk {
 
             // free resources
             rte_pktmbuf_free_bulk(mbufs, count); // free in bulk instead of in a loop
-            // rte_pktmbuf_free()?
+            // rte_pktmbuf_free()
 
         }
+        // We count here full processing time
+        uint64_t e2e_end = rte_rdtsc();
+        double e2e_seconds = (double)(e2e_end - e2e_start) / rte_get_tsc_hz();
+        printf("\n[INFO] End-to-End Rx Loop Time: %.6f seconds\n", e2e_seconds);
 
     } //namespace dpdk
 }

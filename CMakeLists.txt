@@ -17,6 +17,7 @@ add_executable(nyse_decoder
     # src/decode/scalar/scalar_decoder.cpp
     src/io/binary_dump.hpp
     src/order_book/order_book.hpp
+    src/perf/perf_stats.hpp
     # src/io/stats.cpp
 )
 
