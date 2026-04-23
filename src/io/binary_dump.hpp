@@ -6,12 +6,12 @@
 
 #include <rte_mbuf.h> 
 
-// Changes to move to rx_loop
+
 #include <rte_ether.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
 #include <rte_byteorder.h>
-////// end of those changes
+
 
 // constexpr uint16_t ETH_IP_UDP_LEN = 14 + 20 + 8;
 

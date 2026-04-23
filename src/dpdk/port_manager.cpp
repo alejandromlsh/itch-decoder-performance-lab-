@@ -28,7 +28,7 @@ namespace dpdk {
       //                  = 2048 + 128 = 2176 bytes per slot.
       //                  NYSE ITCH/OUCH UDP payloads are at most ~1500 bytes
 
-      //  SOCKET_ID_ANY   Allocate on whichever NUMA node has free memory.
+      //  SOCKET_ID_ANY   Allocate on whichever NUMA n(in a no server computer just 1) node has free memory.
       //                  On a single-socket workstation this is always node 0.
       //                  On multi-socket servers, align this with the NIC's socket
       //                  to avoid cross-socket memory traffic.

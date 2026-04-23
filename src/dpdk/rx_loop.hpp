@@ -46,7 +46,6 @@ namespace dpdk {
 
             if (count == 0) {
                 ++empty_burst_count;   // PCAP EOF
-                // printf("[INFO] rte_eth_rx_burst returned 0\n");
                 // Only check the slow link status if we've spun 10 times
                 if (empty_burst_count > EOF_THRESHOLD) {
                     break; // for testing I will avoid the next calls
@@ -54,10 +53,9 @@ namespace dpdk {
                     rte_eth_link_get_nowait(port_id, &link);
                     
                     if (link.link_status == RTE_ETH_LINK_DOWN) {
-                        // printf("\n[INFO] PCAP EOF detected (link down).\n");
                         break; 
                     }
-                    empty_burst_count = 0; // Reset so we don't spam the check
+                    empty_burst_count = 0; 
                 }
                 continue;
             }
@@ -66,14 +64,14 @@ namespace dpdk {
             for (int i = 0; i < count;++i) {
                 rte_mbuf * this_mbuf = mbufs[i];
 
-                // 1. Start at the Ethernet header
+                // Ethernet header
                 uint8_t * data = rte_pktmbuf_mtod(this_mbuf, uint8_t *);
                 uint16_t offset = sizeof(struct rte_ether_hdr);
                 struct rte_ether_hdr * eth = reinterpret_cast<struct rte_ether_hdr *>(data);
 
                 uint16_t ether_type = rte_be_to_cpu_16(eth->ether_type);
 
-                // 2. Check for 802.1Q VLAN tag and adjust offset if present
+                // Check for 802.1Q VLAN tag and adjust offset if present
 
                 if (ether_type == RTE_ETHER_TYPE_VLAN) {
                     struct rte_vlan_hdr * vlan = reinterpret_cast<struct rte_vlan_hdr *>(data + offset);
@@ -85,7 +83,7 @@ namespace dpdk {
                 if (ether_type != RTE_ETHER_TYPE_IPV4) {
                     continue; 
                 }
-                // 3. Parse IPv4 Header to get dynamic IP header length
+                // Parse IPv4 Header to get dynamic IP header length
                 struct rte_ipv4_hdr * ip = reinterpret_cast<struct rte_ipv4_hdr *>(data + offset);
 
                 // Only process UDP packets
@@ -97,7 +95,7 @@ namespace dpdk {
                 uint8_t ip_hdr_len = (ip->version_ihl & 0x0f) * 4; 
                 offset += ip_hdr_len;
 
-                // 4. Parse UDP Header
+                // Parse UDP Header
                 struct rte_udp_hdr * udp = reinterpret_cast<struct rte_udp_hdr *>(data + offset);
 
                 // DPDK dgram_len includes the 8-byte UDP header. Subtract 8 to get payload length.
@@ -106,10 +104,10 @@ namespace dpdk {
                 // Move offset past the UDP header
                 offset += sizeof(struct rte_udp_hdr);
 
-                // 5. Extract payload and write to file
+                // Extract payload and pass it to decoder
                 uint8_t * payload = data + offset;
                 
-                if (kEnableDump) [[unlikely]] {
+                if constexpr (kEnableDump) {
                   dump->write_packet(payload,payload_len);
                 }
                 

@@ -256,15 +256,18 @@ private:
 public:
 
   void print_summary() const {
-      printf("adds=%" PRIu64 "\n executes=%" PRIu64 "\n cancels=%" PRIu64
-            "\n deletes=%" PRIu64 " replaces=%" PRIu64
-            "\n active_orders=%zu"
-            "\n duplicate_adds=%" PRIu64
-            "\n unknown_executes=%" PRIu64
-            "\n unknown_cancels=%" PRIu64
-            "\n unknown_deletes=%" PRIu64
-            "\n unknown_replaces=%" PRIu64
-            "\n invalid_reductions=%" PRIu64
+      printf("\nadds=%" PRIu64 
+            "\nexecutes=%" PRIu64
+            "\ncancels=%" PRIu64
+            "\ndeletes=%" PRIu64 
+            "\nreplaces=%" PRIu64
+            "\nactive_orders=%zu"
+            "\nduplicate_adds=%" PRIu64
+            "\nunknown_executes=%" PRIu64
+            "\nunknown_cancels=%" PRIu64
+            "\nunknown_deletes=%" PRIu64
+            "\nunknown_replaces=%" PRIu64
+            "\ninvalid_reductions=%" PRIu64
             "\n",
             stats.adds,
             stats.executes,
@@ -303,4 +306,4 @@ public:
 
 };
 
-} // namespace indicator
+} // namespace 

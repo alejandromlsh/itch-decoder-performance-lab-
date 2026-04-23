@@ -12,17 +12,12 @@
 #include "decoder/scalar_decoder.hpp"
 #include "order_book/order_book.hpp"
 #include "io/binary_dump.hpp"
-// #include "io/stats.hpp"
 
 static constexpr const char* DUMP_PATH = "/home/alejandro/workspace/1-nasdaq-parser/data/nyse_dump2.bin";
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Signal handling
-//
+
 // g_stop is written by the SIGINT/SIGTERM handler and read inside run_rx_loop.
-// volatile prevents the compiler from caching the value in a register across
-// loop iterations — the write and read are in different translation units.
-// ─────────────────────────────────────────────────────────────────────────────
 
 static volatile bool g_stop = false;
 static void on_signal(int) { g_stop = true; }
@@ -33,9 +28,9 @@ static void on_signal(int) { g_stop = true; }
 // Launch command:
 // I have isolated core 4 in grub to have minimum interruptions, so use such core
 //
-//   sudo ./nyse_decoder                                            
-//       --no-huge -l 4                                             
-//       --vdev "net_pcap0,rx_pcap=/data/nyse.pcap,infinite_rx=0"
+// sudo ./nyse_decoder --no-huge -l 4 --vdev 
+//      "net_pcap0,rx_pcap=/home/alejandro/workspace/1-nasdaq-parser/build/ny4-xnas-tvitch-a-20230822-all-sorted.pcap,infinite_rx=0"
+
 //
 //   --no-huge       Use anonymous mmap instead of 2 MB hugepages.
 //                   Fine for PCAP replay; avoids hugepage configuration.
@@ -51,7 +46,7 @@ int main(int argc, char** argv)
     std::signal(SIGINT,  on_signal);
     std::signal(SIGTERM, on_signal);
 
-    // ── 1. EAL initialisation ────────────────────────────────────────────────
+    // EAL initialisation
 
     try {
         dpdk::init_eal(argc, argv);
@@ -60,7 +55,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // ── 2. Validate that the vdev registered a port ──────────────────────────
+    // Validate that the vdev registered a port 
     //
     // If --vdev was missing or malformed, rte_eth_dev_count_avail returns 0
     // and every subsequent rte_eth_* call on port 0 would be undefined behaviour.
@@ -72,7 +67,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // ── 3. Pool and port setup ───────────────────────────────────────────────
+    // Pool and port setup 
     //
     // PortConfig owns all tuning values (port_id, nb_mbufs, rx_desc, etc.).
 
@@ -107,7 +102,7 @@ int main(int argc, char** argv)
                   << " link did not come up within 2 s. Continuing anyway.\n";
     }
 
-    // ── 4. Binary dump ───────────────────────────────────────────────────────
+    // Binary dump 
     //
     // Writes raw MoldUdp frames to disk BEFORE any protocol parsing.
 
@@ -117,15 +112,15 @@ int main(int argc, char** argv)
         std::cout << "[INFO] Binary dump → " << DUMP_PATH << "\n";
     }
 
-    // ── 5. RX loop + scalar decoder ──────────────────────────────────────────
+    //  RX loop + scalar decoder
     //
     // run_rx_loop is a template function: inlined
 
-    std::cout << "[INFO] Decoder: scalar\n";
+    std::cout << "[INFO] Decoder:\n";
     std::cout << "[INFO] Starting RX loop — Ctrl+C to stop.\n";
 
     model::OrderBook book;
-    // class ScalarDecoder {};
+
     itch::ScalarDecoder decoder(book);
 
     dpdk::run_rx_loop(port_cfg.port_id, decoder, dump.get(), g_stop);
@@ -135,13 +130,11 @@ int main(int argc, char** argv)
     decoder.decode_stats.report("Just decode, and endian changes Processing Latency");
     decoder.book_stats.report("Book Order Processing Latency");
 
-    book.print_top_of_book(88);
-
     book.print_summary();
 
 
 
-    // ── 6. Teardown ──────────────────────────────────────────────────────────
+    // Teardown
 
     dpdk::teardown_port(port_cfg.port_id);
     dpdk::cleanup();

@@ -12,7 +12,6 @@
 // of cycles. Each time simply increase the corresponding one
 struct PerfStats {
     // 2,000,000 cycles at 3GHz = ~666 microseconds. 
-    //  Even if my cpu slow to 1.5 GHz should work
     static constexpr uint64_t MAX_CYCLES = 2000000; 
 
     std::vector<uint64_t> histogram;

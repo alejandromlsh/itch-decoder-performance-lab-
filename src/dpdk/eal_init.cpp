@@ -16,7 +16,7 @@ namespace dpdk {
 
       //  2. LCORE THREADS
       //     Spawns one pthread per logical core listed in --lcores / -l.
-      //     We use "-l 0" (single core) because PCAP replay is single-threaded.
+      //     We use "-l 4" (single core) because PCAP replay is single-threaded.
       //  3. PMD DRIVER REGISTRATION
       //     Scans the --vdev arguments and instantiates the matching driver.
       //     "--vdev net_pcap0,rx_pcap=file.pcap,infinite_rx=0" loads the PCAP
