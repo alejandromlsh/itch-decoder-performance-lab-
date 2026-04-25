@@ -20,6 +20,111 @@ The goal is to optimise the pipeline, check different techniques, benchmark and 
 
 ---
 
+## Performance Summary (Tag v1.1.0)
+
+First change has been replaced the unordered_map by a open adress hash map using Linear Probing with Tombstone Deletion.. However, how this has increase the min speed of the Book order
+by a lot, the worst case is grotesque, taking up to 1 milisecond!!!!
+
+This is cause by the linear probing across tombstones. The program has a maximum of around 3 million active orders and with a space in the hash map of 
+8 million I expected this to be enough. Alas, with my current algorithms tombstones never come back to being empty, so the program end iterating millions of times
+trying to find the next empty in an array full of tombstones. 
+The advantage of this open adrress hash map was that before the congestion the O(1) access in the array was way faster than the pointer chasing in unordered_map.
+
+My perf stats shows the issue with  Linear Probing
+```text
+--- Book Order Processing Latency ---
+Messages : 170567076
+Min      : 0.50 ns
+Avg      : 7664.41 ns
+p50      : 711.32 ns
+p90      : 13044.13 ns
+p99      : 150889.14 ns
+p99.9    : 380624.15 ns
+Max      : > 1001853.43 ns (Overflow)
+```
+
+I will explore and implement Robin Hood hashing with Backward Shift Deletion. 
+Robin Hood to keep the position with more sense and backward shift deletion to avoid to accumulate the Tombstones
+
+After implementing Robin Hool and backward shit deletion a big improvent is notice. Execution time in the book order p99.9 is reduced
+in comparison with the unordered_map and ofcourse as well in comparison with previous version of the open address hash map
+```
+--- Book Order Processing Latency ---
+Messages : 388290471
+Min      : 0.50 ns
+Avg      : 311.19 ns
+p50      : 190.35 ns
+p90      : 801.48 ns
+p99      : 1362.52 ns
+p99.9    : 2093.87 ns
+Max      : 224825.93 ns
+```
+Note: for future runs apply -> sudo cpupower frequency-set -g performance to have a common set here.
+p99.9 was reduced from the v1.0.0 (using std::unordered_map) from 2,494.74 ns to **2093.87 ns**, around 20% improvement. p50 was reduced from 320 ns to 190 ns, more than 30% reduction.
+
+Overal end to end time for the target file was reduced from 300s to 200s.
+
+Performance counter stats for './nyse_decoder --no-huge -l 4 --vdev net_pcap0,rx_pcap=/home/alejandro/workspace/1-nasdaq-parser/build/ny4-xnas-tvitch-a-20230822-all-sorted.pcap,infinite_rx=0':
+```text
+        206,733.92 msec task-clock                       #    0.994 CPUs utilized             
+            81,458      context-switches                 #  394.023 /sec                      
+                 2      cpu-migrations                   #    0.010 /sec                      
+            91,124      page-faults                      #  440.779 /sec                      
+   728,160,477,314      cycles                           #    3.522 GHz                         (85.71%)
+    62,810,684,119      stalled-cycles-frontend          #    8.63% frontend cycles idle        (85.71%)
+   483,497,586,681      instructions                     #    0.66  insn per cycle            
+                                                  #    0.13  stalled cycles per insn     (85.71%)
+    91,843,148,185      branches                         #  444.258 M/sec                       (85.71%)
+     2,247,099,731      branch-misses                    #    2.45% of all branches             (85.71%)
+   244,173,477,674      L1-dcache-loads                  #    1.181 G/sec                       (85.71%)
+    13,317,649,067      L1-dcache-load-misses            #    5.45% of all L1-dcache accesses   (85.71%)
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses 
+```
+Also the instruction per cycle has improved from around 0.5 to 0.66 and the cache misses has fall around 0.5%. Some improvement but still work to do.
+Afterward state:
+![alt text](perf_reports/perf_report_after_robin_hood.png)
+
+  
+   
+
+
+Some points I need to focus.
+1. The nyse_decoder [unknown_ process] using 20% sycles is hidden due to lack of debug files during compilation. But in combination with my own perf states
+it is easy to deduce that this heavy load is still comming from the OrderBook.
+2. There is a lot of load due to system calls reading the input file.
+
+There is a option of improving both points simultaneusly using hugepages ro reduce the TLB (translation lookaside buffer) misses.
+Reasoning, the open address map is allocating 8.3 million slots. AS will be used with Order Entry this is aroun 200Mb of data.
+
+In normal conditions the operating system manage memory in 4kb pages. This mean 50k pages. The CPU TLB that translate virtual memory into physical RAM
+can only cache some thousand pages. So not all of the 50k required in normal conditions to contain my map can be simultanuesly at the cache, and since the 
+hash is probing there are constant TLB misses (TLB thrashing).
+
+Using hugepages I can solve this easily. With a rather small (for hugeages) page of 2Mb I only need 100 pages to contain my hash map. And all that pages can
+be manage simultaneusly by the TLB, so no misses there.
+
+This also will improve the performance of dpdk function reading the file  from disk. rte_eal_init() will reserve the amount of memory it needs for the
+rte_mempool and will similary be benefited by less cache misses.
+
+For the system set up and dpdk this is pretty easy to do, symply sudo sysctl -w vm.nr_hugepages=2048 and then call the app with --in_memory instead of --no_huge
+
+For the open address hash map needs a bit of work, to mmap memory to hugepages, and replace the make unique.
+
+
+
+
+
+After that the remaining optimization is to work in the replacement of the std::map
+and align as 16 the order entry
+std::map -> Flat sparse array
+alignas(16) the order entry to make it more cache friendly
+
+
+
+
+
+
 ## Performance Summary (Tag v1.0.0)
 
 ### Conditions

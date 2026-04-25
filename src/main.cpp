@@ -1,5 +1,4 @@
 #include <csignal>
-#include <iostream>
 #include <memory>
 #include <stdexcept>
 
@@ -31,7 +30,7 @@ static void on_signal(int) { g_stop = true; }
 // sudo ./nyse_decoder --no-huge -l 4 --vdev 
 //      "net_pcap0,rx_pcap=/home/alejandro/workspace/1-nasdaq-parser/build/ny4-xnas-tvitch-a-20230822-all-sorted.pcap,infinite_rx=0"
 
-//
+//   --in_memory     Better than --no_huge will help to increase TLB
 //   --no-huge       Use anonymous mmap instead of 2 MB hugepages.
 //                   Fine for PCAP replay; avoids hugepage configuration.
 //
@@ -51,7 +50,7 @@ int main(int argc, char** argv)
     try {
         dpdk::init_eal(argc, argv);
     } catch (const std::exception& e) {
-        std::cerr << e.what() << "\n";
+        fprintf(stderr, "%s\n", e.what());
         return 1;
     }
 
@@ -61,8 +60,9 @@ int main(int argc, char** argv)
     // and every subsequent rte_eth_* call on port 0 would be undefined behaviour.
 
     if (dpdk::available_ports() == 0) {
-        std::cerr << "[ERROR] No DPDK ports found.\n"
-                  << "        Launch with: --vdev \"net_pcap0,rx_pcap=<file>,infinite_rx=0\"\n";
+        fprintf(stderr, "[ERROR] No DPDK ports found.\n"
+                        "        Launch with: --vdev \"net_pcap0,rx_pcap=<file>,infinite_rx=0\"\n");
+
         dpdk::cleanup();
         return 1;
     }
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
     try {
         pool = dpdk::create_mempool("NYSE_POOL", port_cfg.nb_mbufs);
     } catch (const std::exception& e) {
-        std::cerr << e.what() << "\n";
+        fprintf(stderr, "%s\n", e.what());
         dpdk::cleanup();
         return 1;
     }
@@ -91,15 +91,15 @@ int main(int argc, char** argv)
     try {
         dpdk::setup_port(port_cfg, pool);
     } catch (const std::exception& e) {
-        std::cerr << e.what() << "\n";
+        fprintf(stderr, "%s\n", e.what());
         dpdk::cleanup();
         return 1;
     }
 
     // PCAP PMD always reports link-up immediately; this guard is unnecesary for this use case
     if (!dpdk::wait_for_link(port_cfg.port_id)) {
-        std::cerr << "[WARN] Port " << port_cfg.port_id
-                  << " link did not come up within 2 s. Continuing anyway.\n";
+      fprintf(stderr, "[WARN] Port %" PRIu16 " link did not come up within 2 s. Continuing anyway.\n", 
+              port_cfg.port_id);
     }
 
     // Binary dump 
@@ -109,15 +109,15 @@ int main(int argc, char** argv)
     std::unique_ptr<BinaryDump> dump;
     if (DUMP_PATH) {
         dump = std::make_unique<BinaryDump>(DUMP_PATH);
-        std::cout << "[INFO] Binary dump → " << DUMP_PATH << "\n";
+        printf("[INFO] Binary dump → %s\n",DUMP_PATH);
     }
 
     //  RX loop + scalar decoder
     //
     // run_rx_loop is a template function: inlined
 
-    std::cout << "[INFO] Decoder:\n";
-    std::cout << "[INFO] Starting RX loop — Ctrl+C to stop.\n";
+    printf("[INFO] Decoder:\n");
+    printf("[INFO] Starting RX loop — Ctrl+C to stop.\n");
 
     model::OrderBook book;
 
@@ -130,6 +130,9 @@ int main(int argc, char** argv)
     decoder.decode_stats.report("Just decode, and endian changes Processing Latency");
     decoder.book_stats.report("Book Order Processing Latency");
 
+
+
+    // std::cout << "[ANALYSIS]: Max number of active orders is ->" << book.max_active_orders << "\n";
     book.print_summary();
 
 
