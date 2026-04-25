@@ -2,9 +2,10 @@
 #include "decoder/mold_itch_protocol.hpp"
 #include <array>
 #include <map>
-#include <unordered_map>
+// #include <unordered_map>
 #include <cstring>
 #include <cinttypes>
+#include "containers/open_address_hash_map.hpp"
 
 // Basic Book Order level 2
 
@@ -54,7 +55,8 @@ class OrderBook{
   static constexpr size_t MAX_STOCK_LOCATE = 0xFFFF - 1; // 2 bytes of uint16_t -1
   std::array<SymbolInfo,MAX_STOCK_LOCATE> symbols_by_locate{}; // stock to symbol info. Index is stock locate
   std::array<SymbolBook,MAX_STOCK_LOCATE> books_by_locate{}; // stock locate to BookState of Symbol (bids and asks per price)
-  std::unordered_map<uint64_t, OrderEntry> orders_by_reference_num{}; // order_reference to the stored order itself
+  // std::unordered_map<uint64_t, OrderEntry> orders_by_reference_num{}; // order_reference to the stored order itself
+  containers::OpenAddressHashMap<OrderEntry> orders_by_reference_num{};;
 
 
 
@@ -96,6 +98,16 @@ class OrderBook{
   }
 
 public:
+  uint64_t active_orders = 0;
+  uint64_t max_active_orders = 0;
+  void update_max_orders(bool add) {
+    if (add) {
+      ++active_orders;
+      max_active_orders = std::max(max_active_orders,active_orders);
+    } else {
+      --active_orders;
+    }
+  }
   void insert_to_stock_directory(uint16_t stock_locate,
                                 const char * stock8,
                                 MarketCategory mkt_cat,
@@ -132,19 +144,27 @@ public:
         ++stats.duplicate_adds;
         return;
       }
+      update_max_orders(true);
       add_quantity_at_price_level(stock_locate,side,price,shares);
       ++stats.adds;
   } 
 
   void execute_order(uint64_t order_reference,
                      uint32_t executed_shares){
-      auto it = orders_by_reference_num.find(order_reference); // lookup in the hashmap
-      if (it == orders_by_reference_num.end()) {
-        //unkown order has been executed
+      // auto it = orders_by_reference_num.find(order_reference); // lookup in the hashmap
+      // if (it == orders_by_reference_num.end()) {
+      //   //unkown order has been executed
+      //   ++stats.unknown_executes;
+      //   return;
+      // }
+      // OrderEntry& ord = it->second;
+      OrderEntry * ord_ptr = orders_by_reference_num.find(order_reference);
+      OrderEntry& ord = *ord_ptr;
+      if (ord_ptr == nullptr) {
+        //   //unkown order has been executed
         ++stats.unknown_executes;
         return;
       }
-      OrderEntry& ord = it->second;
       if (executed_shares > ord.shares) {
         ++stats.invalid_reductions;
         return;
@@ -154,7 +174,9 @@ public:
       ord.shares -= executed_shares;
       // if drop to zero remove order from the book as we did from the map of price levels
       if (ord.shares == 0) {
-        orders_by_reference_num.erase(it);
+        // orders_by_reference_num.erase(it);
+        orders_by_reference_num.erase(order_reference);
+        update_max_orders(false);
       }
       ++stats.executes;
 
@@ -162,14 +184,24 @@ public:
 
   // Partial reduction of shares
   void cancel_order(uint64_t order_reference,uint32_t cancelled_shares){
-    auto it = orders_by_reference_num.find(order_reference);
-    if (it == orders_by_reference_num.end()){
-      ++stats.unknown_cancels;
-      //no order
+    // auto it = orders_by_reference_num.find(order_reference);
+    // if (it == orders_by_reference_num.end()){
+    //   ++stats.unknown_cancels;
+    //   //no order
+    //   return;
+    // }
+    // // reduce quantities in the price level
+    // OrderEntry & order = it->second;
+    OrderEntry * ord_ptr = orders_by_reference_num.find(order_reference);
+
+    if (ord_ptr == nullptr) {
+      //   //unkown order has been executed
+      ++stats.unknown_executes;
       return;
     }
-    // reduce quantities in the price level
-    OrderEntry & order = it->second;
+    OrderEntry & order = *ord_ptr;
+
+
     if (cancelled_shares > order.shares) {
       ++stats.invalid_reductions;
       // not possible to cancel more shares that there is in the order
@@ -179,24 +211,38 @@ public:
     order.shares -= cancelled_shares;
 
     if (order.shares == 0){
-      orders_by_reference_num.erase(it);
+      // orders_by_reference_num.erase(it);
+      orders_by_reference_num.erase(order_reference);
+      update_max_orders(false);
     }
     ++stats.cancels;
   }
 
   void delete_order(uint64_t order_reference){
-    auto it = orders_by_reference_num.find(order_reference);
-    if (it == orders_by_reference_num.end()){
-      //order not present
-      ++stats.unknown_deletes;
+    // auto it = orders_by_reference_num.find(order_reference);
+    // if (it == orders_by_reference_num.end()){
+    //   //order not present
+    //   ++stats.unknown_deletes;
+    //   return;
+    // }
+    // // delete numbers of shares from the price level
+    // OrderEntry & order = it->second;
+    OrderEntry * ord_ptr = orders_by_reference_num.find(order_reference);
+
+    if (ord_ptr == nullptr) {
+      //   //unkown order has been executed
+      ++stats.unknown_executes;
       return;
     }
-    // delete numbers of shares from the price level
-    OrderEntry & order = it->second;
+    OrderEntry & order = *ord_ptr;
+
     reduce_quantity_at_price_level(order.stock_locate,order.side,order.price,order.shares);
     // Now delete the order from the orders
-    orders_by_reference_num.erase(it);
+    // orders_by_reference_num.erase(it);
+    orders_by_reference_num.erase(order_reference);
+
     ++stats.deletes;
+    update_max_orders(false);
 
 
   }
@@ -205,16 +251,24 @@ public:
                      uint32_t new_price,
                      uint32_t new_shares){
 
-    auto it_old = orders_by_reference_num.find(old_order_reference);
-    if (it_old == orders_by_reference_num.end()){
+    // auto it_old = orders_by_reference_num.find(old_order_reference);
+    // if (it_old == orders_by_reference_num.end()){
+    //   ++stats.unknown_replaces;
+    //   return;
+    // }
+    // OrderEntry old_order = it_old->second; // no reference because we need to copy
+    // // delete old shares from price level
+    OrderEntry * ord_ptr_old = orders_by_reference_num.find(old_order_reference);
+    if (ord_ptr_old == nullptr) {
       ++stats.unknown_replaces;
       return;
     }
-    OrderEntry old_order = it_old->second; // no reference because we need to copy
-    // delete old shares from price level
+    OrderEntry old_order = *ord_ptr_old;
+
     reduce_quantity_at_price_level(old_order.stock_locate,old_order.side,old_order.price,old_order.shares);
 
-    orders_by_reference_num.erase(it_old);
+    // orders_by_reference_num.erase(it_old);
+    orders_by_reference_num.erase(old_order_reference);
     // now input new order
 
     auto [new_it,inserted] = orders_by_reference_num.emplace(new_order_reference,OrderEntry {

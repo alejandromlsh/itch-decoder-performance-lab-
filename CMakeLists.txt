@@ -19,10 +19,11 @@ add_executable(nyse_decoder
     src/main.cpp
     src/dpdk/eal_init.cpp
     src/dpdk/port_manager.cpp
-    # src/decode/scalar/scalar_decoder.cpp
+    src/decoder/scalar_decoder.hpp
     src/io/binary_dump.hpp
     src/order_book/order_book.hpp
     src/perf/perf_stats.hpp
+    src/containers/open_address_hash_map.hpp
     # src/io/stats.cpp
 )
 
